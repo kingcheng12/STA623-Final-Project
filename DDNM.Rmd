@@ -1,0 +1,19 @@
+---
+title: "DDNM"
+author: "Gongjinghao Cheng"
+date: "11/19/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## DDNM
+
+### 1 
+
+To begin with, we want to written DDNM as form of MDM. The DDNM is as below:  
+$$
+y_{jt}=c_{jt}+\sum_{j=1}^{p(a)}\phi_{ij}X_{ij}+\sum_{i\in pa(j)}+v_{jt}
+$$
