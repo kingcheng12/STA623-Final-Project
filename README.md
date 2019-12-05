@@ -1,2 +1,2 @@
 # STA623-Final-Project
-Implementation of Dynamic Dependency network model.
+Explore portfolio allocation and different utility functions with benchmark

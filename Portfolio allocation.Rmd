@@ -1,0 +1,272 @@
+---
+title: "Portfolio allocation"
+author: "Gongjinghao Cheng"
+date: "11/19/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r eval=F}
+library(tidyverse)
+library(ggplot2)
+```
+
+#### strategies considered:
+#tailored made utility functions, which can be non continuous and able to capture possible prefer- ences #associated with some portfolio managers
+#static (myopic) portfolio allocation decisions connected to dy- namic settings where multi-period allocations #are considered and conditions are defined to rebalance the portfolio as new information arrive
+#
+#Expected utility maximization
+#
+#### taliored utility function: prefer more to less and are risk averse
+#U'(w)>0; U''(w)<0
+#
+#It is commonly accepted that is reasonable to expect that general investors can be characterized by a constant #ab- solute risk aversion and a decreasing relative risk aversion as a function of the level of wealth.
+#The quadratic utility function possesses the undesirable characteristic that the relative risk aversion is #increasing with the wealth.
+#With the negative ex- ponential utility function, absolute and relative risk aversion levels are constant, #equal to $\lambda$.
+#logarithmic function has relative risk aversion decrease with the wealth, However, with a logarithmic utility #function it may be difficult to model differences in risk aversion for different investors with the same level #of wealth. (achieve by negative exponetial)
+#
+#### sparse mean-variance portfolio
+#
+#### quadratic 
+#
+#### exponential 
+#
+#### logrithmic
+#
+#### power
+#
+#Do benchmark (-CDD), decorelated for mean-variance analysis
+#
+#Try for utility functions
+
+```{r}
+f <- as.matrix(read.csv('portfolio_mean_variance.csv',row.names = 1, header= TRUE))
+v <- as.matrix(read.csv('variance_matrix.csv',row.names = 1, header= TRUE))
+hist <- read.csv('exr_returns.csv', header= TRUE)
+
+hist %>% select(-date) %>% lapply(mean)
+```
+
+
+### Mean-Variance Analysis
+
+Only consider expected mean and variance of returns. More specificly, given a target return rate, we would like to construct a portfolio (in terms of w, the weights of each assets in the portfolio) that minimizes the variance of the portfolio. We will also take into account of differnet constraints, including benchmarks (discount the risk-free return from each of the assets), decorrelation of assets ($w^TVe_i=0$) and transaction cost.
+
+## subject to unit constraint of weights
+
+$\hat{w}=arg~min_{w}\frac{w'Vw}{2}-\lambda(w'\underline{1}-1)=\frac{\Lambda\underline{1}}{\underline{1}'\Lambda\underline{1}}$, where $\lambda=\frac{1}{\underline{1}'\Lambda\underline{1}},\Lambda=V^{-1}$
+
+```{r}
+one <- matrix(1,10,1)
+Lam <- solve(v)
+lam <- 1/(t(one) %*% Lam %*% one)[1,1]
+w_hat1 <- lam * (Lam %*% one)
+```
+
+## add target return m=0.05
+
+$\hat{w}=arg~min_{w}\frac{w'Vw}{2}-\lambda(w'\underline{1}-1)-\gamma(w'f-m)=\Lambda(\lambda\underline{1}+\gamma f)$, where $\lambda=(g-hm)/d,\gamma=(qm-h)/d,h=f'\Lambda\underline{1},q=\underline{1}'\Lambda\underline{1},g=f'\Lambda f,d=gq-h^2$
+
+```{r}
+m <- 0.05
+h <- t(f) %*% Lam %*% one
+q <- t(one) %*% Lam %*% one
+g <- t(f) %*% Lam %*% f
+d <- g*q - h^2
+
+lam <- ((g-h*m)/d)[1]
+gamma <- ((q*m-h)/d)[1]
+
+w_hat2 <- Lam %*% (lam * one + gamma * f)
+
+#sum(w_hat2)
+```
+
+## add benchmark of CAD return
+
+Apply above precedure with $f_{new}=f-f_{CAD}\underline{1}$
+
+```{r}
+f_new <- f-f[3]
+m <- 0.05
+
+h <- t(f_new) %*% Lam %*% one
+q <- t(one) %*% Lam %*% one
+g <- t(f_new) %*% Lam %*% f_new
+d <- g*q - h^2
+
+lam <- ((g-h*m)/d)[1]
+gamma <- ((q*m-h)/d)[1]
+
+w_hat3 <- Lam %*% (lam * one + gamma * f_new)
+
+#sum(w_hat3)
+```
+
+## add decorrelation of benchmark and other assets
+
+$\hat{w}=arg~min_{w}\frac{w'Vw}{2}-\lambda(w'\underline{1}-1)-\gamma(w'f_{new}-m)-\phi(w'V\underline{e}_{CAD}-0)=\Lambda(\lambda\underline{1}+\gamma f_{new}+\phi V\underline{e}_{CAD})$, where $\underline{e}_{CAD}$ is a length-10 vector with 1 at CAD and 0 elsewhere.
+
+For the Lagarange parameters $\lambda,\gamma,\phi$:
+$$
+\begin{aligned}
+&\gamma = \frac{bqm-hb-la}{-h^2b+gqb-a^2}\\
+&\phi = \frac{\gamma a-l}{b}\\
+&\lambda = \frac{1-\gamma h-\phi l}{q}\\
+&where\\
+&a=hl-cq\\
+&b=dq-l^2\\
+&h=f_{new}'\Lambda\underline{1}\\
+&q=\underline{1}'\Lambda\underline{1}\\
+&g=f_{new}'\Lambda f_{new}\\
+&l=\underline{1}'\Lambda V \underline{e}_{CAD}=1\\
+&c=\underline{e}'_{CAD} V'\Lambda f_{new}=f_{new_{CAD}}\\
+&d=\underline{e}'_{CAD} V'\Lambda V \underline{e}_{CAD}=var_{CAD}
+\end{aligned}
+$$
+
+```{r}
+m <- 0.05
+e <- matrix(0,10,1)
+e[3] <- 1
+
+h <- t(f_new) %*% Lam %*% one
+q <- t(one) %*% Lam %*% one
+g <- t(f_new) %*% Lam %*% f_new
+l <- 1
+c <- f_new[3]
+d <- v[3,3]
+
+a <- h*l-c*q
+b <- d*q-l^2
+
+gamma <- ((b*q*m-h*b-l*a)/(-h^2*b+g*q*b-a^2))[1]
+phi <- ((gamma*a-l)/b)[1]
+lam <- ((1-gamma*h-phi*l)/q)[1]
+
+w_hat4 <- Lam %*% (lam * one + gamma * f_new + phi * v %*% e)
+
+```
+
+# comparasion of 4 weights
+
+```{r}
+nms <- rownames(f)
+constraint<-c('unit','target_return','add_benchmark','decorrelate_benchmark')
+w_all <- data.frame(currency=rep(nms,4),constraint=rep(constraint,each=10),weights=c(w_hat1,w_hat2,w_hat3,w_hat4))
+
+ggplot(w_all,aes(x=currency,y=weights,group = constraint, color=constraint))+
+  geom_point()+
+  stat_summary(fun.y=sum,geom="line")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+## consider transaction cost
+
+Define $U_\gamma(r)$ as utility function depending on return r and risk-aversion parameter $\gamma$. The transaction cost would be a function of a discrete vector $\Delta_t=w_{t+1}-w_{t^+}$, the new allocation $w_t$ and the allocation right before adjustment $w_{t^+}$. $w_{t^+}=\frac{w_t\circ (\underline{1}+r_t)}{\underline{1}+w_t'r_t}$, where $\circ$ is element-wise multiplication.  
+$~$
+Define $v_t(w)=v(w_{t+1},w_{t^+},\beta)$, where $\beta > 0$ is the cost parameter.  
+$~$
+Then, optimal portfolio for time t+1 is $w_{t+1}^*=arg~max_w w'f-v_t(w)-\frac{\gamma}{2}w'Vw$, where $\gamma$ is the variance parameter, we set it to 1 for consistence.
+
+# Quadratic cost function
+
+$v_t(w)=\frac{\beta}{2}(w_{t+1}-w_{t^+})'(w_{t+1}-w_{t^+})$. Plug in and rewrite, we have $w_{t+1}^*=arg~min_w \frac{1}{2}w'V^*w-w'f^*-\lambda(w'\underline1-1)$, where $V^*=\beta I_{10\times10}+V,f^*=f+\beta w_{t^+}$.
+$~$
+Now suppose we have a uniform portfolio at the end of our train set, we want to decide our porfolio in next period with unit constraint and transaction cost consideration.
+
+```{r}
+w_t <- matrix(1/10,10,1)
+r_t <- hist[nrow(hist),-1] %>% as.matrix() %>% t()
+colnames(r_t) <- 'return'
+
+w_tplus <- (w_t*(1+r_t))/(1+t(w_t)%*%r_t)[1]
+
+get_w <- function(beta){
+  I <- diag(1,10,10)
+  V_star <- beta*I+v
+  f_star <- f+beta*w_tplus
+  
+  lam <- ((1-(t(f_star) %*% V_star %*% one))/(t(one) %*% V_star %*% one))[1]
+  w_hat <- V_star %*% (lam * one + f_star)
+  
+  return(w_hat)
+}
+
+### beta = 1
+get_w(1)
+```
+
+# sensitivity w.r.t. beta
+
+Larger beta means larger transaction cost.
+```{r}
+beta <- c(0.1,0.5,1,2,5,10)
+w1 <- beta %>% sapply(get_w)
+
+BETA<-as.factor(beta)
+wb <- data.frame(currency=rep(nms,6),beta=rep(BETA,each=10),weights=as.vector(w1))
+
+ggplot(wb,aes(x=currency,y=weights,group = beta, color=beta))+
+  geom_point()+
+  stat_summary(fun.y=sum,geom="line")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+# proportional transaction cost
+
+$v_t(w)=\beta\sum_{i=1}^{10}|w_{t+1,i}-w_{t^+,i}|,~where~\beta>0$. Then, we have $w_{t+1}^*=arg~min_{\underline1\Delta_t=0} \gamma\Delta_t'Vw_{t^+}+\frac{\gamma}{2}\Delta_t'V\Delta_t+\beta||\Delta_t||_1$. Solve the formula and we get $w_{t+1}^*=(1+\frac{\beta}{\gamma}\underline{1'}\Lambda g)w^{mvp}-\frac{\beta}{\gamma}\Lambda g$, where g is a length-10 indicator vector with i-th entry equals to 1 if $w_{t+1,i}-w_{t,i}>0$, -1 for else; $w^{mvp}=\frac{\Lambda\underline{1}}{\underline1\Lambda\underline1}$ (weights of GMV portfolio)
+
+```{r}
+### construct g (we may do it with numeric iteration but for time efficiency and our assumption of uniform fortfolio at time t, we choose g by comparing r_t and expected r_t+1)
+
+g <- f-r_t
+g[g>0] <- 1
+g[g<0] <- -1
+
+w_mvp <- (Lam %*% one)/(t(one) %*% Lam %*% one)[1]
+
+### set gamma = 1 
+get_w2 <- function(beta){
+  (1+beta*t(one) %*% Lam %*% g)[1] * w_mvp - beta*Lam%*%g
+}
+
+get_w2(1)
+```
+
+# sensitivity w.r.t. beta
+
+```{r}
+beta <- c(0.1,0.5,1,2,5,10)
+w2 <- beta %>% sapply(get_w2)
+
+BETA<-as.factor(beta)
+wb2 <- data.frame(currency=rep(nms,6),beta=rep(BETA,each=10),weights=as.vector(w2))
+
+ggplot(wb2,aes(x=currency,y=weights,group = beta, color=beta))+
+  geom_point()+
+  stat_summary(fun.y=sum,geom="line")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### Apply different utility fucntions
+
+## (1) Quadratic function
+
+# setting:
+$U(w)=w-\beta w^2$
+
+## (2) Exponential fucntion
+$U(w)=1-e^{-\beta w^2}$
+
+## (3) Logarithmic function
+$\frac{1}{\beta+w}$
+
+
+
+
