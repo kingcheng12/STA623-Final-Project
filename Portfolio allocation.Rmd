@@ -9,9 +9,13 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r eval=F}
+```{r}
 library(tidyverse)
 library(ggplot2)
+library(monomvn)
+library(mvtnorm)
+library(knitr)
+require(gridExtra)
 ```
 
 #### strategies considered:
@@ -46,8 +50,6 @@ library(ggplot2)
 f <- as.matrix(read.csv('portfolio_mean_variance.csv',row.names = 1, header= TRUE))
 v <- as.matrix(read.csv('variance_matrix.csv',row.names = 1, header= TRUE))
 hist <- read.csv('exr_returns.csv', header= TRUE)
-
-hist %>% select(-date) %>% lapply(mean)
 ```
 
 
@@ -64,6 +66,7 @@ one <- matrix(1,10,1)
 Lam <- solve(v)
 lam <- 1/(t(one) %*% Lam %*% one)[1,1]
 w_hat1 <- lam * (Lam %*% one)
+# sum(w_hat1)
 ```
 
 ## add target return m=0.05
@@ -86,6 +89,12 @@ w_hat2 <- Lam %*% (lam * one + gamma * f)
 ```
 
 ## add benchmark of CAD return
+
+
+```{r}
+hist %>% dplyr::select(-date) %>% lapply(mean)
+```
+
 
 Apply above precedure with $f_{new}=f-f_{CAD}\underline{1}$
 
@@ -110,21 +119,21 @@ w_hat3 <- Lam %*% (lam * one + gamma * f_new)
 
 $\hat{w}=arg~min_{w}\frac{w'Vw}{2}-\lambda(w'\underline{1}-1)-\gamma(w'f_{new}-m)-\phi(w'V\underline{e}_{CAD}-0)=\Lambda(\lambda\underline{1}+\gamma f_{new}+\phi V\underline{e}_{CAD})$, where $\underline{e}_{CAD}$ is a length-10 vector with 1 at CAD and 0 elsewhere.
 
-For the Lagarange parameters $\lambda,\gamma,\phi$:
+For the L agarange parameters $\lambda,\gamma,\phi$:
 $$
 \begin{aligned}
-&\gamma = \frac{bqm-hb-la}{-h^2b+gqb-a^2}\\
-&\phi = \frac{\gamma a-l}{b}\\
-&\lambda = \frac{1-\gamma h-\phi l}{q}\\
-&where\\
-&a=hl-cq\\
-&b=dq-l^2\\
-&h=f_{new}'\Lambda\underline{1}\\
-&q=\underline{1}'\Lambda\underline{1}\\
-&g=f_{new}'\Lambda f_{new}\\
-&l=\underline{1}'\Lambda V \underline{e}_{CAD}=1\\
-&c=\underline{e}'_{CAD} V'\Lambda f_{new}=f_{new_{CAD}}\\
-&d=\underline{e}'_{CAD} V'\Lambda V \underline{e}_{CAD}=var_{CAD}
+\gamma = \frac{bqm-hb-la}{-h^2b+gqb-a^2},~                     
+\phi = \frac{\gamma a-l}{b},~
+\lambda = \frac{1-\gamma h-\phi l}{q},~
+where
+a=hl-cq
+b=dq-l^2
+h=f_{new}'\Lambda\underline{1}
+q=\underline{1}'\Lambda\underline{1}
+g=f_{new}'\Lambda f_{new}
+l=\underline{1}'\Lambda V \underline{e}_{CAD}=1
+c=\underline{e}'_{CAD} V'\Lambda f_{new}=f_{new_{CAD}}
+d=\underline{e}'_{CAD} V'\Lambda V \underline{e}_{CAD}=var_{CAD}
 \end{aligned}
 $$
 
@@ -155,8 +164,66 @@ w_hat4 <- Lam %*% (lam * one + gamma * f_new + phi * v %*% e)
 
 ```{r}
 nms <- rownames(f)
-constraint<-c('unit','target_return','add_benchmark','decorrelate_benchmark')
-w_all <- data.frame(currency=rep(nms,4),constraint=rep(constraint,each=10),weights=c(w_hat1,w_hat2,w_hat3,w_hat4))
+constraint<-c('stage 1','stage 2','stage 3')
+w_all <- data.frame(currency=rep(nms,3),constraint=rep(constraint,each=10),weights=c(w_hat1,w_hat2,w_hat4))
+
+ggplot(w_all,aes(x=currency,y=weights,group = constraint, color=constraint))+
+  geom_point()+
+  stat_summary(fun.y=sum,geom="line")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Based on the plot, the portfolio based on stage 2 and 3 are the most similar pairs, since they only differ in return rate (adjusted by benchmark). The weights based solely on unit constraints has much difference (even opposite sign) from others when optimal weights are likely to be large (denmark and euro), but it follows other two except stage 4 when weights are low. The stage 4 constraints does vary from stage 2 and stage 3 but it generally follows the pattern. It has larger weights when weights are likely to be small and this is possible caused by decorrelation.  
+
+# change of Volatility
+
+```{r}
+set.seed(1)
+change <- rnorm(9,1,0.01)
+v_change <- v
+v_change[3,-3] <- v[3,-3]+change
+v_change[-3,3] <- v[-3,3]+change
+####
+one <- matrix(1,10,1)
+Lam <- solve(v_change)
+lam <- 1/(t(one) %*% Lam %*% one)[1,1]
+w_hat1c <- lam * (Lam %*% one)
+######
+m <- 0.05
+h <- t(f) %*% Lam %*% one
+q <- t(one) %*% Lam %*% one
+g <- t(f) %*% Lam %*% f
+d <- g*q - h^2
+
+lam <- ((g-h*m)/d)[1]
+gamma <- ((q*m-h)/d)[1]
+
+w_hat2c <- Lam %*% (lam * one + gamma * f)
+######
+m <- 0.05
+e <- matrix(0,10,1)
+e[3] <- 1
+
+h <- t(f_new) %*% Lam %*% one
+q <- t(one) %*% Lam %*% one
+g <- t(f_new) %*% Lam %*% f_new
+l <- 1
+c <- f_new[3]
+d <- v_change[3,3]
+
+a <- h*l-c*q
+b <- d*q-l^2
+
+gamma <- ((b*q*m-h*b-l*a)/(-h^2*b+g*q*b-a^2))[1]
+phi <- ((gamma*a-l)/b)[1]
+lam <- ((1-gamma*h-phi*l)/q)[1]
+
+w_hat4c <- Lam %*% (lam * one + gamma * f_new + phi * v_change %*% e)
+
+###
+nms <- rownames(f)
+constraint<-c('stage 1','stage 2','stage 3')
+w_all <- data.frame(currency=rep(nms,3),constraint=rep(constraint,each=10),weights=c(w_hat1c,w_hat2c,w_hat4c))
 
 ggplot(w_all,aes(x=currency,y=weights,group = constraint, color=constraint))+
   geom_point()+
@@ -205,13 +272,13 @@ get_w(1)
 
 Larger beta means larger transaction cost.
 ```{r}
-beta <- c(0.1,0.5,1,2,5,10)
+beta <- c(0.01,0.05,0.1,0.2,0.5)
 w1 <- beta %>% sapply(get_w)
 
 BETA<-as.factor(beta)
-wb <- data.frame(currency=rep(nms,6),beta=rep(BETA,each=10),weights=as.vector(w1))
+wb <- data.frame(currency=rep(nms,5),beta=rep(BETA,each=10),weights=as.vector(w1))
 
-ggplot(wb,aes(x=currency,y=weights,group = beta, color=beta))+
+quap <- ggplot(wb,aes(x=currency,y=weights,group = beta, color=beta))+
   geom_point()+
   stat_summary(fun.y=sum,geom="line")+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -220,7 +287,7 @@ ggplot(wb,aes(x=currency,y=weights,group = beta, color=beta))+
 
 # proportional transaction cost
 
-$v_t(w)=\beta\sum_{i=1}^{10}|w_{t+1,i}-w_{t^+,i}|,~where~\beta>0$. Then, we have $w_{t+1}^*=arg~min_{\underline1\Delta_t=0} \gamma\Delta_t'Vw_{t^+}+\frac{\gamma}{2}\Delta_t'V\Delta_t+\beta||\Delta_t||_1$. Solve the formula and we get $w_{t+1}^*=(1+\frac{\beta}{\gamma}\underline{1'}\Lambda g)w^{mvp}-\frac{\beta}{\gamma}\Lambda g$, where g is a length-10 indicator vector with i-th entry equals to 1 if $w_{t+1,i}-w_{t,i}>0$, -1 for else; $w^{mvp}=\frac{\Lambda\underline{1}}{\underline1\Lambda\underline1}$ (weights of GMV portfolio)
+$v_t(w)=\beta\sum_{i=1}^{10}|w_{t+1,i}-w_{t^+,i}|,~where~\beta>0$. Then, we have $w_{t+1}^*=arg~min_{\underline1\Delta_t=0} \gamma\Delta_t'Vw_{t^+}+\frac{\gamma}{2}\Delta_t'V\Delta_t+\beta||\Delta_t||_1$. Solve the formula and we get $w_{t+1}^*=(1+\frac{\beta}{\gamma}\underline{1'}\Lambda g)w^{mvp}-\frac{\beta}{\gamma}\Lambda g$, where g is a length-10 indicator vector with i-th entry equals to 1 if $w_{t+1,i}-w_{t,i}>0$, -1 for else; $w^{mvp}=\frac{\Lambda\underline{1}}{\underline1\Lambda\underline1}$ (weights of Global Minimum Variance Portfolio).
 
 ```{r}
 ### construct g (we may do it with numeric iteration but for time efficiency and our assumption of uniform fortfolio at time t, we choose g by comparing r_t and expected r_t+1)
@@ -242,31 +309,57 @@ get_w2(1)
 # sensitivity w.r.t. beta
 
 ```{r}
-beta <- c(0.1,0.5,1,2,5,10)
+beta <- c(0.01,0.05,0.1,0.2,0.5)
 w2 <- beta %>% sapply(get_w2)
 
 BETA<-as.factor(beta)
-wb2 <- data.frame(currency=rep(nms,6),beta=rep(BETA,each=10),weights=as.vector(w2))
+wb2 <- data.frame(currency=rep(nms,5),beta=rep(BETA,each=10),weights=as.vector(w2))
 
-ggplot(wb2,aes(x=currency,y=weights,group = beta, color=beta))+
+propp <- ggplot(wb2,aes(x=currency,y=weights,group = beta, color=beta))+
   geom_point()+
   stat_summary(fun.y=sum,geom="line")+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
+```{r}
+grid.arrange(quap, propp, ncol=2)
+```
+
 ### Apply different utility fucntions
+
+Too apply utility function, we need to create discrete scenarios of return rate (according to history). We would choose portfolio based on the expected utility w.r.t. to the distribution of scenarios.
+
+Given f and v, assume our return rate follow a MVN distribution.
+
+```{r}
+### generate scenarios, for purpose of illustration, set each scenarios with same probability
+set.seed(3)
+sce <- mvrnorm(n=5,mu=f,Sigma=v)
+rownames(sce) <- paste('scenario_',1:5,sep='')
+p <- rep(1/5,5)
+```
 
 ## (1) Quadratic function
 
 # setting:
-$U(w)=w-\beta w^2$
+
+$U(w)=w-\frac{k}{2} w^2$
+$MU(x)=1-kw$
+k is an risk parameter: the higher the k, the more risk an investor will take.  
+
+
 
 ## (2) Exponential fucntion
+
 $U(w)=1-e^{-\beta w^2}$
 
 ## (3) Logarithmic function
-$\frac{1}{\beta+w}$
 
+$U(x)=\frac{1}{\beta+w}$
+
+```{r}
+kable(f)
+```
 
 
 
