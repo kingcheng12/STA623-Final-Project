@@ -256,7 +256,7 @@ w_tplus <- (w_t*(1+r_t))/(1+t(w_t)%*%r_t)[1]
 get_w <- function(beta){
   I <- diag(1,10,10)
   V_star <- beta*I+v
-  f_star <- f+beta*w_tplus
+  f_star <- beta*w_tplus
   
   lam <- ((1-(t(f_star) %*% V_star %*% one))/(t(one) %*% V_star %*% one))[1]
   w_hat <- V_star %*% (lam * one + f_star)
@@ -282,6 +282,7 @@ quap <- ggplot(wb,aes(x=currency,y=weights,group = beta, color=beta))+
   geom_point()+
   stat_summary(fun.y=sum,geom="line")+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+quap
 ```
 
 
@@ -319,10 +320,11 @@ propp <- ggplot(wb2,aes(x=currency,y=weights,group = beta, color=beta))+
   geom_point()+
   stat_summary(fun.y=sum,geom="line")+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+propp
 ```
 
 ```{r}
-grid.arrange(quap, propp, ncol=2)
+grid.arrange(quap, propp, nrow=2)
 ```
 
 ### Apply different utility fucntions
